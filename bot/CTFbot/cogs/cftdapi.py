@@ -43,12 +43,9 @@ class CTFDnotif(commands.Cog):
 
     @tasks.loop(seconds=CTFD_SUCCESS_UPDATE)
     async def update(self,force=False):
-        now = time()
-        if (now-self._last_update)>CTFD_USERS_UPDATE or force:
-            self.users = self.link.get_users()
-        if (now-self._last_update)>CTFD_SUCCESS_UPDATE or force:
-            await self.update_success(force)
-        self._last_update = now
+        self.users = self.link.get_users()
+        await self.update_success(force)
+        self._last_update = time()
 
     @update.before_loop
     async def before_update(self):
@@ -62,6 +59,7 @@ class CTFDnotif(commands.Cog):
 
     
     async def update_success(self,force=False):
+        print("update success...")
         for user in self.users:
             successes = self.link.get_successes(user['id'])
             for challenge in successes:
