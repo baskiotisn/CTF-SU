@@ -6,11 +6,13 @@ from discord.ext import commands
 from os import listdir
 from os.path import isfile, join
 import traceback
-load_dotenv()
+
 DB_SQLITE = os.getenv('DB_SQLITE')
 cogs_dir = os.getenv("COGS_DIR")
+intents = discord.Intents.default()
+intents.members = True
 
-bot = commands.Bot(command_prefix="!")
+bot = commands.Bot(command_prefix="!",intents=intents)
 
 @bot.event
 async def on_ready():

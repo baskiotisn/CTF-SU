@@ -1,33 +1,35 @@
 from requests import Session
 from requests.compat import urljoin
 import os
-import json
-from discord.ext import commands
-from time import time
-import discord
+from discord.ext import commands, tasks
+from time import time,sleep
+from datetime import datetime
+from discord.utils import get
+
 CTFD_TOKEN = os.getenv("CTFD_TOKEN")
 CTFD_SITE = os.getenv("CTFD_SITE")
 CTFD_API = os.getenv("CTFD_API")
 CTFD_SUCCESS_UPDATE = float(os.getenv("CTFD_SUCCESS_UPDATE"))
 CTFD_USERS_UPDATE = float(os.getenv("CTFD_USERS_UPDATE"))
-
+GUILD_ID = int(os.getenv("GUILD_ID"))
 
 class CTFDlink:
     def __init__(self):
         self.session = generate_session()
     
     def get_users(self):
-        req = s.get("users",json=True)
+        req = self.session.get("users",json=True)
         if req.status_code != 200:
             print(f"error {req.url} {req.status_code}")
         users = [format_user(u) for u in req.json()["data"]]
         return users
 
     def get_successes(self,user_id):
-        req = s.get(f"users/{user_id}/solves",json=True)
+        
+        req = self.session.get(f"users/{user_id}/solves",json=True)
         if req.status_code != 200:
             print(f"error {req.url} {req.status_code}")
-        challenges = [{"name":c['challenge']['name'],"date":c['date']} for c in req.json()]
+        challenges = [{"name":c['challenge']['name'],"date":c['date']} for c in req.json()["data"]]
         return challenges
     
 
@@ -37,39 +39,48 @@ class CTFDnotif(commands.Cog):
         self.link = CTFDlink()
         self._last_update = 0
         self.users = []
-        print("ici ou la c'est pareil")
-    
+        self.update.start()
+
+    @tasks.loop(seconds=CTFD_SUCCESS_UPDATE)
     async def update(self,force=False):
         now = time()
         if (now-self._last_update)>CTFD_USERS_UPDATE or force:
             self.users = self.link.get_users()
-        if (now-self._last_update)>CTFD_SUCCES_UPDATE or force:
+        if (now-self._last_update)>CTFD_SUCCESS_UPDATE or force:
             await self.update_success(force)
         self._last_update = now
-    
+
+    @update.before_loop
+    async def before_update(self):
+        print('waiting...')
+        await self.bot.wait_until_ready()
+
     @commands.command(name="forceroleupdate")
     @commands.has_permissions(administrator=True)
-    async def force_update(ctx,self):
-        print("lalala")
+    async def force_update(self,ctx):
         await self.update(True)
 
     
     async def update_success(self,force=False):
-        print("ici")
         for user in self.users:
-            if user['name'] not in ["baskiotisn"]:
-                continue
             successes = self.link.get_successes(user['id'])
             for challenge in successes:
-                if challenge['date']>self._last_update or force:
+                if datetime.fromisoformat(challenge['date']).replace(tzinfo=None)>datetime.fromtimestamp(self._last_update) or force:
                     salon, chan, role = challenge_to_SCR(challenge['name'])
                     await self.give_role(role,user['discord_nick'])
         
 
-    async def give_role(self,role: discord.Role, member: discord.Member):
+    async def give_role(self,role_name,discord_nick):
+        member = self.bot.get_guild(GUILD_ID).get_member_named(discord_nick)
+        print(f"Giving {role_name} to {discord_nick}")
+        if member is None:
+            print(f"Erreur User not found : {discord_name} {discr}")
+            return 
+        role = get(self.bot.get_guild(GUILD_ID).roles,name=role_name)
+        if role is None:
+            print(f"Erreur Role not found : {role_name}")
         if role not in member.roles:
-            await member.add_role(role)
-
+            await member.add_roles(role)
     
 
 class APISession(Session):
@@ -99,9 +110,7 @@ def format_user(u):
     if len(lst)==0:
         return None
     discord_id = lst[0]
-    if "#" not in discord_id:
-        return None
-    return {"id":u['id'],"name":u['name'],"discord_nick":"".join(lst[0].split("#")[:-1]),"discord_id":lst[0].split("#")[-1]}
+    return {"id":u['id'],"name":u['name'],"discord_nick":discord_id}
 
 def challenge_to_SCR(chal_name):
         try:
