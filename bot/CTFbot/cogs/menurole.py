@@ -15,8 +15,8 @@ DB_SQLITE = os.getenv('DB_SQLITE')
 class MenuRole(commands.Cog):
     def __init__(self,bot):
         self.bot = bot
-
-    @commands.command(name="role")
+        
+    @commands.command(name="role",help="construit un menu de roles : !role channel 'text' role1 role2")
     @has_permissions(administrator=True)
     async def create_menu_role(self,ctx,chan,titre,*args):
         """ /role chan  'Choisir un role...'  role1 role2 " """
