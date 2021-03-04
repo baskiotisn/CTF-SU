@@ -6,13 +6,17 @@ from os import listdir
 from os.path import isfile, join
 import traceback
 import logging
-
+from logging.handlers import RotatingFileHandler
+logging.basicConfig(level=eval("logging."+os.getenv("LOG_LEVEL", "INFO")))
 logger = logging.getLogger(__name__)
-logger.setLevel(eval("logging."+os.getenv("LOG_LEVEL","INFO")))
 
-logger.addHandler(logging.StreamHandler())
 if os.getenv("LOG_FILE"):
-    logger.addHandler(logging.FileHandler(os.getenv("LOG_FILE")))
+    handler = RotatingFileHandler(os.getenv("LOG_FILE"),maxBytes=2000000,backupCount=10)
+    handler.setLevel(logger.level)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logging.getLogger('').addHandler(handler)
+
 
 cogs_dir = os.getenv("COGS_DIR","cogs")
 

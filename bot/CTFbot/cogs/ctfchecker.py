@@ -3,7 +3,7 @@ from discord.ext import commands
 
 import logging
 
-logger = logging.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 ### Todo : remplacer l'import module par une gestion bdd/plus flexbile.
 
@@ -11,8 +11,10 @@ class CTFChecker(commands.Cog):
     def __init__(self,bot):
         self.bot = bot
     
-    @commands.command(name="CTF",help="Valider un challenge. Usage : !CTF nom_challenge réponse")
+    @commands.command(name="CTF")
     async def check_flag(self,ctx,name,*,reponse):
+        """  Valider un challenge : CTF nom_challenge réponse """
+        
         logger.debug(f"check_flag {ctx.author} {name} {reponse}")
         if ctx.author.dm_channel is None or ctx.message.channel.id != ctx.author.dm_channel.id:
             await ctx.message.delete()

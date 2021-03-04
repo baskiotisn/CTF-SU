@@ -22,13 +22,13 @@ class MenuRole(commands.Cog):
     def __init__(self,bot):
         self.bot = bot
         
-    @commands.command(name="role",help="construit un menu de roles : !role channel 'text' role1 role2")
+    @commands.command(name="menurole")
     @has_permissions(administrator=True)
     async def create_menu_role(self,ctx,chan,titre,*args):
+        """ Construit un menu de roles : menurole channel  message role1  role2 ... """
         
-        logger.debug(f"create_menu_role {ctx.author} {chan} {titire} {"".join(a for a in args)}")
-        
-        chan = discord.utils.get(self.bot.get_guild(GUILD_ID).(get_all_channels(),name=chan)
+        logger.debug(f"create_menu_role {ctx.author} {chan} {titre} {''.join(a for a in args)}")
+        chan = discord.utils.get(self.bot.get_guild(GUILD_ID).channels,name=chan)
         if chan is None:
             await ctx.author.send(f"Le channel {chan} n'a pas été trouvé")
             logger.debug(f" -> failed : no {chan} found in guild {GUILD_ID}")
@@ -66,7 +66,7 @@ class MenuRole(commands.Cog):
         if role is None:
             logger.warning(f"role not existing : reaction_add {payload.guild_id} {payload.user_id} {payload.message_id} {role_id}")
             return
-        user = await self.bot.get_guild(payload.guild_id).get_member(payload.user_id)
+        user = self.bot.get_guild(payload.guild_id).get_member(payload.user_id)
         if user is None:
             logger.warning(f"member {payload.user_id} not found")
             return
@@ -85,7 +85,7 @@ class MenuRole(commands.Cog):
         if role is None:
             logger.warning(f"role not existing : reaction_add {payload.guild_id} {payload.user_id} {payload.message_id} {role_id}")
             return
-        user = await self.bot.get_guild(payload.guild_id).get_member(payload.user_id)
+        user =  self.bot.get_guild(payload.guild_id).get_member(payload.user_id)
         if user is None:
             logger.warning(f"member {payload.user_id} not found")
             return
