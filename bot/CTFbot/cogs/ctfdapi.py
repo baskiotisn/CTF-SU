@@ -24,16 +24,20 @@ class CTFDlink:
         self.session = generate_session()
     
     def get_users(self):
-        logger.debug("get_users begins")
+        """ return the list of the ctfd users:
+            :return: [{"id":ctfd_id,"name":ctfd_name,"discord_nick":discord_nick}]
+        """
         req = self.session.get("users",json=True)
         if req.status_code != 200:
             logger.warning(f"Error get_users :  {req.url} {req.status_code}")
             return []
-        users = [format_user(u) for u in req.json()["data"]]
+        users = [_format_user(u) for u in req.json()["data"]]
         return [u for u in users if u is not None]
 
     def get_teams(self):
-        logger.debug("get_teams begins")
+        """ return the list of the ctfd challenges :
+            :return: [{"name":team_name, membres":[discord_nick],"challenges":[{"name":name,"date":date}]}]
+        """
         users = { u['id']:u for u in self.get_users()}
         req = self.session.get("teams",json=True)
         if req.status_code != 200:
@@ -46,8 +50,10 @@ class CTFDlink:
             teams.append({"name":team["name"],"membres":members,"challenges":solves})
         return teams
         
-    def get_successes(self,user_id):
-        logger.debug("get_successes begins.")
+    def get_user_successes(self,user_id):
+        """ return the list of challenges success for user_id :
+            :return: [{"name":chal_name, "date":date}] 
+        """
         req = self.session.get(f"users/{user_id}/solves",json=True)
         if req.status_code != 200:
             logger.warning(f"Error get_successes {req.url} {req.status_code}")
@@ -56,12 +62,14 @@ class CTFDlink:
         return challenges
 
     def get_challenges(self):
-        logger.debug("get_challenges begins.")
-        req = self.session.get(f"challenges")
+        """ return the list of challenges 
+            :return: ["chal_name"]
+        """
+        req = self.session.get(f"challenges",json=True)
         if req.status_code != 200:
             logger.warning(f"Error get_challenges {req.url} {req.get_challenges}")
             return []
-        challenges = [c["name"] for c in req.json()["data"]]
+        challenges = [{"name":c["name"]} for c in req.json()["data"]]
         return challenges
 
 
@@ -75,32 +83,106 @@ class CTFDnotif(commands.Cog):
 
     @tasks.loop(seconds=CTFD_SUCCESS_UPDATE)
     async def update(self,force=False):
-        logger.debug(f"Updating users, last time : {self._last_update}")
-        await self.update_success(force)
-        self._last_update = time()
+        """ 
+            Main loop for the update, call update_successes
+        """
+
+        logger.debug(f"Loop update start, last time : {datetime.fromtimestamp(self._last_update)}")
+        await self.update_chan_challenges(force)
+        await self.update_successes(force)
+        self._last_update = time()        
+        logger.debug(f"Loop update end  at {datetime.fromtimestamp(self._last_update)}")
+        
+
+    @update.before_loop
+    async def before_update(self):
+        logger.debug('CTFDnotif waiting bot to be ready...')
+        await self.bot.wait_until_ready()
+
+    @commands.command(name="ctfdupdate")
+    @commands.has_permissions(administrator=True)
+    async def ctfd_update(self,ctx):
+        """ MAJ forcée de CTFD pour les créations de chan et l'attribution des roles  """
+        logger.debug(f"ctfd_update executed by {ctx.author}")
+        await self.update(True)
+
+
+    async def update_chan_challenges(self,force=False):
+        guild = self.bot.get_guild(GUILD_ID)
+        challenges = self.link.get_challenges()
+        for chal in challenges:
+            salon_name, chan_name, role_name = challenge_to_SCR(chal["name"])
+            if salon_name is None:
+                logger.warning(f"Can not parse {chal_name} !!")
+                continue
+            role = get(guild.roles,name=role_name)
+            if role is None or force:
+                await self.create_chan(chal["name"])
+
+
+    async def update_successes(self,force=False):
+        """ Update roles for teams when challenges are successfull
+            :param: force : force the update if True otherwise only if challenge has been solved after the last update
+        """
+        teams = self.link.get_teams()
+        for team in teams:
+            for challenge in team["challenges"]:
+                if _date_after(challenge['date'],self._last_update) or force:
+                    salon_name, chan_name, role_name = challenge_to_SCR(challenge['name'])
+                    if salon_name is None:
+                        logger.warning(f"Category {salon_name} not found (for challenge {challenge['name']}) !!")
+                        continue
+                    await self.send_notif_success(challenge,team,salon_name)
+                    for user in team["membres"]:
+                        logger.debug(f"Update {user} for challenge {challenge['name']}, examining {role_name} ({salon_name}, {chan_name})")
+                        await self.give_role(role_name,user)
+
+    async def send_notif_success(self,challenge,team,salon_name):
+        """ Send notification of success of challenge for team in salon.annonces """
+        salon = get(self.bot.get_guild(GUILD_ID).categories,name=salon_name)
+        if salon is None:
+            logger.warning(f"Category {salon} for challenge {challenge} not found !!")
+        chan = get(salon.channels,name="koth")
+        if chan is None:
+            logger.warning(f"Chan annonces of {salon} for challenge {challenge} not found !!")
+            return
+        async for message in chan.history():
+            if team["name"]  in message.content and challenge['name'] in message.content:
+                return
+        await chan.send(f"La team **{team['name']}** (*{','.join(x.split('#')[0] for x in team['membres'])}*) a résolu **{challenge['name']}** le {datetime.fromisoformat(challenge['date']).strftime('%d/%m/%y à %H:%M')}")
+
 
     async def create_chan(self,chal_name):
+        """
+            Create category and channels for chal_name
+        """
         logger.debug(f"create_chan {chal_name}")
         guild = self.bot.get_guild(GUILD_ID)
         salon_name, chan_name, role_name = challenge_to_SCR(chal_name)
         if salon_name is None:
+            logger.warning(f"Can not parse {chal_name} !!")
             return
+
         role = get(guild.roles,name=role_name)
-        
         if role is None:
             logger.info(f"Creating role {role_name} for {chal_name}")
             role = await guild.create_role(name=role_name)
         salon = get(guild.categories,name=salon_name)
+
         if salon is None:
             logger.info(f"Creating category  {salon_name} for {chal_name}")
             salon = await guild.create_category(salon_name,position=len(guild.categories))
             annonces = await salon.create_text_channel("annonces")
             await annonces.edit(type=discord.ChannelType.news)
+            overwrites = {guild.default_role:discord.PermissionOverwrite(write_messages=False)}
+            koth = await salon.create_text_channel('koth',overwrites=overwrites)
             await salon.create_text_channel("discussion")
+        
         chan = get(salon.channels,name=chan_name)
         if chan is None:
             logger.info(f"Creating chan {chan_name} for {chal_name}")
             chan = await salon.create_text_channel(chan_name)
+
         chan_success = get(salon.channels,name=chan_name+"-success")
         if chan_success is None:
             logger.info(f"Creating chan {chan_name}-success for {chal_name}")
@@ -109,60 +191,14 @@ class CTFDnotif(commands.Cog):
                             role : discord.PermissionOverwrite(read_messages=True)
             }
             chan_success = await salon.create_text_channel(chan_name+"-success",overwrites=overwrites)
-        
-
-
-    @update.before_loop
-    async def before_update(self):
-        logger.debug('waiting bot to be ready...')
-        await self.bot.wait_until_ready()
-
-    @commands.command(name="forceroleupdate")
-    @commands.has_permissions(administrator=True)
-    async def force_role_update(self,ctx):
-        """ MAJ forcée des roles pour les challenges """
-        logger.debug(f"forceroleupdate executed by {ctx.author}")
-        await self.update(True)
-
-    @commands.command(name="forcechalupdate")
-    @commands.has_permissions(administrator=True)
-    async def force_chal_update(self,ctx):
-        """ MAJ des chans pour les challenges """
-        logger.debug(f"forcechalupdate executed by {ctx.author}")
-        challenges = self.link.get_challenges()
-        for c in challenges:
-            await self.create_chan(c)
-
-    async def update_success(self,force=False):
-        logger.debug(f"Update success mode force={force}")
-        teams = self.link.get_teams()
-        for team in teams:
-            for challenge in team["challenges"]:
-                if datetime.fromisoformat(challenge['date']).replace(tzinfo=None)> datetime.fromtimestamp(self._last_update) or force:
-                    salon, chan, role = challenge_to_SCR(challenge['name'])
-                    if salon is None:
-                        continue
-                    for user in team["membres"]:
-                        logger.info(f"Update {user} for challenge {challenge['name']}, giving {role} ({salon}, {chan})")
-                        await self.give_role(role,user)
 
     
-    async def update_success_by_user(self,force=False):
-        logger.debug(f"Update success mode force={force}")
-        for user in self.users:
-            successes = self.link.get_successes(user['id'])
-            for challenge in successes:
-                if datetime.fromisoformat(challenge['date']).replace(tzinfo=None)>datetime.fromtimestamp(self._last_update) or force:
-                    salon, chan, role = challenge_to_SCR(challenge['name'])
-                    if salon is None:
-                        continue
-                    logger.info(f"Update {user['discord_nick']} for challenge {challenge['name']}, giving {role} ({salon}, {chan})")
-                    await self.give_role(role,user['discord_nick'])
-        
 
     async def give_role(self,role_name,discord_nick):
+        """ 
+            Give the role role_name to discord_nick
+        """
         member = self.bot.get_guild(GUILD_ID).get_member_named(discord_nick)
-        logger.debug(f"Giving {role_name} to {discord_nick}")
         if member is None:
             logger.warning(f"Error ctfdapi : user not found : {discord_nick} in {GUILD_ID}")
             return 
@@ -170,6 +206,7 @@ class CTFDnotif(commands.Cog):
         if role is None:
             logger.warning(f"Error Role not found : {role_name} in {GUILD_ID}")
         if role not in member.roles:
+            logger.info(f"Giving {role_name} to {discord_nick}")
             await member.add_roles(role)
         
 
@@ -193,9 +230,11 @@ class APISession(Session):
 
 
 
+def _date_after(date,timestamp):
+    return datetime.fromisoformat(date).replace(tzinfo=None) > datetime.fromtimestamp(timestamp) 
 
 
-def format_user(u):
+def _format_user(u):
     lst = [t['value'] for t in u['fields'] if t['name']=='Discord ID']
     if len(lst)==0:
         logger.warning(f"Error format_user {u['name']}: no discord id found")

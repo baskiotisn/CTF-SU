@@ -7,16 +7,25 @@ from os.path import isfile, join
 import traceback
 import logging
 from logging.handlers import RotatingFileHandler
-logging.basicConfig(level=eval("logging."+os.getenv("LOG_LEVEL", "INFO")))
-logger = logging.getLogger(__name__)
+from colorlog import ColoredFormatter
+
+
+LOGFORMAT = " %(log_color)s%(levelname)-8s:%(name)s%(reset)s | %(log_color)s%(message)s%(reset)s"
+LOG_LEVEL = eval("logging."+os.getenv("LOG_LEVEL","INFO"))
+
+handler = logging.StreamHandler()
+handler.setLevel(LOG_LEVEL)
+handler.setFormatter(ColoredFormatter(LOGFORMAT))
+handlers = [handler]
 
 if os.getenv("LOG_FILE"):
     handler = RotatingFileHandler(os.getenv("LOG_FILE"),maxBytes=2000000,backupCount=10)
-    handler.setLevel(logger.level)
+    handler.setLevel(LOG_LEVEL)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     handler.setFormatter(formatter)
-    logging.getLogger('').addHandler(handler)
-
+    handlers.append(handler)
+logging.basicConfig(level=LOG_LEVEL,handlers=handlers)
+logger = logging.getLogger(__name__)
 
 cogs_dir = os.getenv("COGS_DIR","cogs")
 
