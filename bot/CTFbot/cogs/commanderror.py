@@ -25,6 +25,10 @@ class CommandErrorHandler(commands.Cog):
         if hasattr(ctx.command, 'on_error'):
          return
 
+
+        if hasattr(ctx.command, 'on_command_error'):
+            return
+
         # This prevents any cogs with an overwritten cog_command_error being handled here.
         cog = ctx.cog
         if cog:
@@ -38,19 +42,24 @@ class CommandErrorHandler(commands.Cog):
 
         # Anything in ignored will return and prevent anything happening.
         if isinstance(error, commands.CommandNotFound):
-            await ctx.send(f'Command not found')
+            await ctx.send(f'Command pas trouvé')
             return
         if isinstance(error, commands.DisabledCommand):
             await ctx.send(f'{ctx.command} has been disabled.')
             return
 
+        if isinstance(error,commands.errors.PrivateMessageOnly):
+            await ctx.message.delete()
+            channel = await ctx.message.author.create_dm()
+            await channel.send(f'{ctx.command} ne peut être exécuté que en message privé !!')
+            return
         # For this error example we check to see where it came from...
         if isinstance(error, commands.BadArgument):
-            await ctx.send('Bad arguments supplied')
+            await ctx.send('Mauvais arguments passés')
             return
         if isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send('Bad number of arguments supplied')
-            retrun
+            await ctx.send('Il manque des arguments à la commande')
+            return
         # All other Errors not returned come here. And we can just print the default TraceBack.
         logger.error(f'Ignoring exception in command {ctx.command} : {type(error)} {error} {error.__traceback__}')
 

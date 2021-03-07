@@ -145,7 +145,7 @@ class CTFDnotif(commands.Cog):
             logger.warning(f"Category {salon} for challenge {challenge} not found !!")
         chan = get(salon.channels,name="koth")
         if chan is None:
-            logger.warning(f"Chan annonces of {salon} for challenge {challenge} not found !!")
+            logger.warning(f"Chan koth of {salon} for challenge {challenge} not found !!")
             return
         async for message in chan.history():
             if team["name"]  in message.content and challenge['name'] in message.content:
@@ -173,8 +173,6 @@ class CTFDnotif(commands.Cog):
         if salon is None:
             logger.info(f"Creating category  {salon_name} for {chal_name}")
             salon = await guild.create_category(salon_name,position=len(guild.categories))
-            annonces = await salon.create_text_channel("annonces")
-            await annonces.edit(type=discord.ChannelType.news)
             overwrites = {guild.default_role:discord.PermissionOverwrite(write_messages=False)}
             koth = await salon.create_text_channel('koth',overwrites=overwrites)
             await salon.create_text_channel("discussion")
