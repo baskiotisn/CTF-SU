@@ -29,7 +29,7 @@ class CTFDlink:
         """
         req = self.session.get("users",json=True)
         if req.status_code != 200:
-            logger.warning(f"Error get_users :  {req.url} {req.status_code}")
+            logger.error(f"Error get_users :  {req.url} {req.status_code}")
             return []
         users = [_format_user(u) for u in req.json()["data"]]
         return [u for u in users if u is not None]
@@ -41,7 +41,7 @@ class CTFDlink:
         users = { u['id']:u for u in self.get_users()}
         req = self.session.get("teams",json=True)
         if req.status_code != 200:
-            logger.warning(f"Error get_teams : {req.url} {req.status_code}")
+            logger.error(f"Error get_teams : {req.url} {req.status_code}")
             return []
         teams = []
         for team in req.json()["data"]:
@@ -56,22 +56,34 @@ class CTFDlink:
         """
         req = self.session.get(f"users/{user_id}/solves",json=True)
         if req.status_code != 200:
-            logger.warning(f"Error get_successes {req.url} {req.status_code}")
+            logger.error(f"Error get_successes {req.url} {req.status_code}")
             return []
         challenges = [{"name":c['challenge']['name'],"date":c['date']} for c in req.json()["data"]]
         return challenges
 
     def get_challenges(self):
         """ return the list of challenges 
-            :return: ["chal_name"]
+            :return: [{"name":"chal_name","id":"chal_id"}]
         """
         req = self.session.get(f"challenges",json=True)
         if req.status_code != 200:
-            logger.warning(f"Error get_challenges {req.url} {req.get_challenges}")
+            logger.error(f"Error get_challenges {req.url} {req.status_code}")
             return []
-        challenges = [{"name":c["name"]} for c in req.json()["data"]]
+        challenges = [{"name":c["name"],"id":c["id"]} for c in req.json()["data"]]
         return challenges
 
+    def get_challenge(self,id):
+        """ return the detail of the challenge id
+            :return: {}
+        """
+
+        req = self.session.get(f"challenges/{id}",json=True)
+        if req.status_code != 200:
+            logger.error(f"Error get_challenge {req.url} {req.status_code}")
+            return []
+        req = req.json()["data"]
+        chal_details = {"name":req["name"],"description":req["description"],"id":req["id"],"value":req["value"]}
+        return chal_details
 
 class CTFDnotif(commands.Cog):
     def __init__(self,bot):
@@ -118,7 +130,8 @@ class CTFDnotif(commands.Cog):
                 continue
             role = get(guild.roles,name=role_name)
             if role is None or force:
-                await self.create_chan(chal["name"])
+                chal_details = self.link.get_challenge(chal['id'])
+                await self.create_chan(chal_details)
 
 
     async def update_successes(self,force=False):
@@ -153,10 +166,11 @@ class CTFDnotif(commands.Cog):
         await chan.send(f"La team **{team['name']}** (*{','.join(x.split('#')[0] for x in team['membres'])}*) a résolu **{challenge['name']}** le {datetime.fromisoformat(challenge['date']).strftime('%d/%m/%y à %H:%M')}")
 
 
-    async def create_chan(self,chal_name):
+    async def create_chan(self,chal):
         """
             Create category and channels for chal_name
         """
+        chal_name = chal['name']
         logger.debug(f"create_chan {chal_name}")
         guild = self.bot.get_guild(GUILD_ID)
         salon_name, chan_name, role_name = challenge_to_SCR(chal_name)
@@ -173,14 +187,17 @@ class CTFDnotif(commands.Cog):
         if salon is None:
             logger.info(f"Creating category  {salon_name} for {chal_name}")
             salon = await guild.create_category(salon_name,position=len(guild.categories))
-            overwrites = {guild.default_role:discord.PermissionOverwrite(write_messages=False)}
+            overwrites = {guild.default_role:discord.PermissionOverwrite(send_messages=False)}
             koth = await salon.create_text_channel('koth',overwrites=overwrites)
             await salon.create_text_channel("discussion")
         
         chan = get(salon.channels,name=chan_name)
         if chan is None:
             logger.info(f"Creating chan {chan_name} for {chal_name}")
-            chan = await salon.create_text_channel(chan_name)
+            html = urljoin(CTFD_SITE.rstrip("/")+"/",f"challenges#{chal_name.replace(' ','%20')}-{chal['id']}")
+            chan = await salon.create_text_channel(chan_name,topic=html+f"  (*{chal['value']} points *)")
+            msg = await chan.send(chal["description"])
+            await msg.pin()
 
         chan_success = get(salon.channels,name=chan_name+"-success")
         if chan_success is None:
@@ -189,7 +206,9 @@ class CTFDnotif(commands.Cog):
                             guild.default_role: discord.PermissionOverwrite(read_messages=False),
                             role : discord.PermissionOverwrite(read_messages=True)
             }
-            chan_success = await salon.create_text_channel(chan_name+"-success",overwrites=overwrites)
+            html = urljoin(CTFD_SITE.rstrip("/")+"/",
+                           f"challenges#{chal_name.replace(' ','%20')}-{chal['id']}")
+            chan_success = await salon.create_text_channel(chan_name+"-success", overwrites=overwrites, topic=html+f"  (*{chal['value']} points *)")
 
     
 
