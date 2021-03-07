@@ -88,9 +88,10 @@ class CTFDnotif(commands.Cog):
         """
 
         logger.debug(f"Loop update start, last time : {datetime.fromtimestamp(self._last_update)}")
+        now = time()
         await self.update_chan_challenges(force)
         await self.update_successes(force)
-        self._last_update = time()        
+        self._last_update = now
         logger.debug(f"Loop update end  at {datetime.fromtimestamp(self._last_update)}")
         
 
@@ -113,7 +114,7 @@ class CTFDnotif(commands.Cog):
         for chal in challenges:
             salon_name, chan_name, role_name = challenge_to_SCR(chal["name"])
             if salon_name is None:
-                logger.warning(f"Can not parse {chal_name} !!")
+                logger.warning(f"Can not parse {chal['name']} !!")
                 continue
             role = get(guild.roles,name=role_name)
             if role is None or force:
@@ -231,7 +232,7 @@ class APISession(Session):
 
 
 def _date_after(date,timestamp):
-    return datetime.fromisoformat(date).replace(tzinfo=None) > datetime.fromtimestamp(timestamp) 
+    return datetime.fromisoformat(date).astimezone() > datetime.fromtimestamp(timestamp).astimezone() 
 
 
 def _format_user(u):
@@ -260,5 +261,4 @@ def generate_session():
 
 
 def setup(bot):
-    logger.info("dodo maintent!!!!")
     bot.add_cog(CTFDnotif(bot))
