@@ -9,10 +9,11 @@ import logging
 from logging.handlers import RotatingFileHandler
 from colorlog import ColoredFormatter
 
+EXCLUDE_COGS = eval(os.getenv("EXCLUCDE_COGS","[]"))
 
 LOGFORMAT = " %(log_color)s%(levelname)-8s:%(name)s%(reset)s | %(log_color)s%(message)s%(reset)s"
 LOG_LEVEL = eval("logging."+os.getenv("LOG_LEVEL","INFO"))
-
+LOG_FILE_LEVEL = eval("logging."+os.getenv("LOG_FILE_LEVEL","DEBUG"))
 handler = logging.StreamHandler()
 handler.setLevel(LOG_LEVEL)
 handler.setFormatter(ColoredFormatter(LOGFORMAT))
@@ -20,11 +21,11 @@ handlers = [handler]
 
 if os.getenv("LOG_FILE"):
     handler = RotatingFileHandler(os.getenv("LOG_FILE"),maxBytes=2000000,backupCount=10)
-    handler.setLevel(LOG_LEVEL)
+    handler.setLevel(LOG_FILE_LEVEL)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     handler.setFormatter(formatter)
     handlers.append(handler)
-logging.basicConfig(level=LOG_LEVEL,handlers=handlers)
+logging.basicConfig(level=logging.DEBUG,handlers=handlers)
 logger = logging.getLogger(__name__)
 
 cogs_dir = os.getenv("COGS_DIR","cogs")
