@@ -268,11 +268,11 @@ class CTFDnotif(commands.Cog):
 
     @commands.command("teampwd")
     @commands.dm_only()
-    async def reset_pwd(self,ctx,pwd):
+    async def reset_team_pwd(self,ctx,pwd):
         """ Permet de changer le password de la team sur le site de ctf (seul le capitaine peut) """
         def _find_team_of_user(teams,discord_nick):
             for t in teams:
-                tmp = [u for u in t["membres"] if u['discord_nick']==discor_nick]
+                tmp = [u for u in t["membres"] if u['discord_nick']==discord_nick]
                 if len(tmp)>0:
                     return t,tmp[0]
             return None

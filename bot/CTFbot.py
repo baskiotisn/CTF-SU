@@ -11,7 +11,6 @@ if "__main__"==__name__:
         load_dotenv()
 
 
-    print(os.getenv("DISCORD_TOKEN"))
 
     from CTFbot import bot
     TOKEN = os.getenv('DISCORD_TOKEN')
