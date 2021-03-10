@@ -253,6 +253,7 @@ class CTFDnotif(commands.Cog):
     @commands.command("pwd")
     @commands.dm_only()
     async def reset_pwd(self,ctx,pwd):
+        """ Permet de changer son password sur le site de ctf """
         discord_nick,tag = ctx.author.name,ctx.author.discriminator
         user = [u for u in self.link.get_users() if u["discord_nick"]==f"{discord_nick}#{tag}"]
         if len(user)==0:
@@ -268,6 +269,7 @@ class CTFDnotif(commands.Cog):
     @commands.command("teampwd")
     @commands.dm_only()
     async def reset_pwd(self,ctx,pwd):
+        """ Permet de changer le password de la team sur le site de ctf (seul le capitaine peut) """
         def _find_team_of_user(teams,discord_nick):
             for t in teams:
                 tmp = [u for u in t["membres"] if u['discord_nick']==discor_nick]
@@ -318,7 +320,7 @@ def _treat_req(req):
         logger.error(f"Error {req.url} {req.status_code}")
         return None
     if not req.json()["success"]:
-        logger.error(f"Error json {req.url} {req.json()['errors']")
+        logger.error(f"Error json {req.url} {req.json()['errors']}")
         return None
     return req.json()["data"]
 
