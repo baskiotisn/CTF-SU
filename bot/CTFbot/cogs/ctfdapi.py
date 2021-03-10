@@ -29,33 +29,24 @@ class CTFDlink:
             :return: [{"id":ctfd_id,"name":ctfd_name,"discord_nick":discord_nick}]
         """
         req = self.session.get("users",json=True)
-        if req.status_code != 200:
-            logger.error(f"Error get_users :  {req.url} {req.status_code}")
-            return []
-        if not req.json()["success"]:
-            logger.error(f"Error patch pwd user {req.url} {req.json()['errors']}")
-            return []
-        users = [_format_user(u) for u in req.json()["data"]]
+        data = _treat_req(req)
+        if data is None: return []
+        users = [_format_user(u) for u in data]
         return [u for u in users if u is not None]
 
     def get_teams(self):
         """ return the list of the ctfd challenges :
-            :return: [{"name":team_name, membres":[discord_nick],"challenges":[{"name":name,"date":date}]}]
+            :return: [{"name":team_name, membres":[{"discord_nick","id"}],"challenges":[{"name":name,"date":date}]}]
         """
         users = { u['id']:u for u in self.get_users()}
         req = self.session.get("teams",json=True)
-        if req.status_code != 200:
-            logger.error(f"Error get_teams : {req.url} {req.status_code}")
-            return []
-        if not req.json()["success"]:
-            logger.error(
-                f"Error patch pwd user {req.url} {req.json()['errors']}")
-            return []
+        data = _treat_req(req)
+        if data is None: return []
         teams = []
-        for team in req.json()["data"]:
-            members = [ users[id]['discord_nick'] for id in self.session.get(f"teams/{team['id']}").json()["data"]["members"] if id in users]
+        for team in data:
+            members = [ {"discord_nick":users[id]['discord_nick'], "id":id}  for id in self.session.get(f"teams/{team['id']}").json()["data"]["members"] if id in users]
             solves = [{"name":c["challenge"]["name"],"date":c["date"]} for c in  self.session.get(f"teams/{team['id']}/solves").json()["data"]]
-            teams.append({"name":team["name"],"membres":members,"challenges":solves})
+            teams.append({"name":team["name"],"captain_id":team["captain_id"], "id":team["id"],"membres":members,"challenges":solves})
         return teams
         
     def get_user_successes(self,user_id):
@@ -63,15 +54,10 @@ class CTFDlink:
             :return: [{"name":chal_name, "date":date}] 
         """
         req = self.session.get(f"users/{user_id}/solves",json=True)
-        if req.status_code != 200:
-            logger.error(f"Error get_successes {req.url} {req.status_code}")
-            return []
-        if not req.json()["success"]:
-            logger.error(
-                f"Error patch pwd user {req.url} {req.json()['errors']}")
-            return []
+        data = _treat_req(req)
+        if data is None: return []
         challenges = [{"name": c['challenge']['name'], "date":c['date']}
-                      for c in req.json()["data"]]
+                      for c in data]
         return challenges
 
     def get_challenges(self):
@@ -79,15 +65,9 @@ class CTFDlink:
             :return: [{"name":"chal_name","id":"chal_id"}]
         """
         req = self.session.get(f"challenges",json=True)
-        if req.status_code != 200:
-            logger.error(f"Error get_challenges {req.url} {req.status_code}")
-            return []
-        if not req.json()["success"]:
-            logger.error(
-                f"Error get_challenges {req.url} {req.json()['errors']}")
-            return []
-
-        challenges = [{"name":c["name"],"id":c["id"]} for c in req.json()["data"]]
+        data =_treat_req(req)
+        if data is None: return []
+        challenges = [{"name":c["name"],"id":c["id"]} for c in data]
         return challenges
 
     def get_challenge(self,id):
@@ -96,37 +76,33 @@ class CTFDlink:
         """
 
         req = self.session.get(f"challenges/{id}",json=True)
-        if req.status_code != 200:
-            logger.error(f"Error get_challenge {req.url} {req.status_code}")
-            return []
-        if not req.json()["success"]:
-            logger.error(
-                f"Error get_challenge {req.url} {req.json()['errors']}")
-            return []
-        req = req.json()["data"]
-        chal_details = {"name":req["name"],"description":req["description"],"id":req["id"],"value":req["value"]}
+        data = _treat_req(req)
+        if data is None: return None
+        chal_details = {"name":data["name"],"description":data["description"],"id":data["id"],"value":data["value"]}
         return chal_details
 
     def reset_pwd(self,user, pwd):
         """ reset le password de l'utilisateur """
         req = self.session.get(f"users/{user['id']}",json=True)
-        if req.status_code != 200:
-            logger.error(f"Error get user {req.url} {req.status_code}")
-            return False
-        if not req.json()["success"]:
-            logger.error(f"Error get user {req.url} {req.json()['errors']}")
-            return False
-        data = req.json()["data"]
+        data = _treat_req(req)
+        if data is None: return False
         data["password"] = pwd
         req = self.session.patch(f"users/{user['id']}",json=data)
-        if req.status_code != 200:
-            logger.error(f"Error patch pwd user {req.url} {req.status_code}")
-            return False
-        if not req.json()["success"]:
-            logger.error(
-                f"Error patch pwd user {req.url} {req.json()['errors']}")
-            return False
+        data =_treat_req(req)
+        if data is None: return False
         return True
+
+    def reset_team_pwd(self,team,pwd):
+        req = self.session.get(f"teams/{team['id']}",json=True)
+        data = _treat_req(req)
+        if data is None: return False
+        data["password"] = pwd
+        req = self.session.patch(f"teams/{team['id']}",json=data)
+        data =_treat_req(req)
+        if data is None: return False
+        return True
+
+
 
 class CTFDnotif(commands.Cog):
     def __init__(self,bot):
@@ -174,6 +150,9 @@ class CTFDnotif(commands.Cog):
             role = get(guild.roles,name=role_name)
             if role is None or force:
                 chal_details = self.link.get_challenge(chal['id'])
+                if chal_details is None:
+                    logger.warning(f"challenge not found!! {chal['id']}")
+                    continue
                 await self.create_chan(chal_details)
 
 
@@ -191,8 +170,8 @@ class CTFDnotif(commands.Cog):
                         continue
                     await self.send_notif_success(challenge,team,salon_name)
                     for user in team["membres"]:
-                        logger.debug(f"Update {user} for challenge {challenge['name']}, examining {role_name} ({salon_name}, {chan_name})")
-                        await self.give_role(role_name,user)
+                        logger.debug(f"Update {user['discord_nick']} for challenge {challenge['name']}, examining {role_name} ({salon_name}, {chan_name})")
+                        await self.give_role(role_name,user["discord_nick"])
 
     async def send_notif_success(self,challenge,team,salon_name):
         """ Send notification of success of challenge for team in salon.annonces """
@@ -271,7 +250,7 @@ class CTFDnotif(commands.Cog):
             await member.add_roles(role)
         
 
-    @commands.command("resetpwd")
+    @commands.command("pwd")
     @commands.dm_only()
     async def reset_pwd(self,ctx,pwd):
         discord_nick,tag = ctx.author.name,ctx.author.discriminator
@@ -282,6 +261,25 @@ class CTFDnotif(commands.Cog):
             return
         user = user[0]
         if not self.link.reset_pwd(user,pwd):
+            await ctx.send(f"Mot de passe non changé.")
+            return
+        await ctx.send(f"Mot de passe changé")
+
+    @commands.command("teampwd")
+    @commands.dm_only()
+    async def reset_pwd(self,ctx,pwd):
+        def _find_team_of_user(teams,discord_nick):
+            for t in teams:
+                tmp = [u for u in t["membres"] if u['discord_nick']==discor_nick]
+                if len(tmp)>0:
+                    return t,tmp[0]
+            return None
+        discord_nick,tag = ctx.author.name,ctx.author.discriminator
+        team, user = _find_team_of_user(self.link.get_teams(),f"{discord_nick}#{tag}")
+        if team["captain_id"] != user['id']:
+            await ctx.send("Seul le capitaine peut changer le mot de passe !")
+            return 
+        if not self.link.reset_team_pwd(team,pwd):
             await ctx.send(f"Mot de passe non changé.")
             return
         await ctx.send(f"Mot de passe changé")
@@ -304,8 +302,25 @@ class APISession(Session):
         return super(APISession, self).request(method, url_tmp, *args, **kwargs)
 
 
+        req = self.session.patch(f"teams/{team['id']}",json=data)
+        if req.status_code != 200:
+            logger.error(f"Error patch team_pwd {req.url} {req.status_code}")
+            return False
+        if not req.json()["success"]:
+            logger.error(
+                f"Error patch team_pwd {req.url} {req.json()['errors']}")
+            return False
+        return True
 
 
+def _treat_req(req):
+    if req.status_code != 200:
+        logger.error(f"Error {req.url} {req.status_code}")
+        return None
+    if not req.json()["success"]:
+        logger.error(f"Error json {req.url} {req.json()['errors']")
+        return None
+    return req.json()["data"]
 
 
 def _date_after(date,timestamp):
