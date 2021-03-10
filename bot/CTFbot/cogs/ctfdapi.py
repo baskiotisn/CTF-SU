@@ -1,3 +1,4 @@
+from discord.ext.commands.core import dm_only
 from requests import Session
 from requests.compat import urljoin
 import os
@@ -6,7 +7,7 @@ from time import time,sleep
 from datetime import datetime
 from discord.utils import get
 from CTFbot.tools import get_env
-
+import json
 import logging
 import discord
 
@@ -31,6 +32,9 @@ class CTFDlink:
         if req.status_code != 200:
             logger.error(f"Error get_users :  {req.url} {req.status_code}")
             return []
+        if not req.json()["success"]:
+            logger.error(f"Error patch pwd user {req.url} {req.json()['errors']}")
+            return []
         users = [_format_user(u) for u in req.json()["data"]]
         return [u for u in users if u is not None]
 
@@ -42,6 +46,10 @@ class CTFDlink:
         req = self.session.get("teams",json=True)
         if req.status_code != 200:
             logger.error(f"Error get_teams : {req.url} {req.status_code}")
+            return []
+        if not req.json()["success"]:
+            logger.error(
+                f"Error patch pwd user {req.url} {req.json()['errors']}")
             return []
         teams = []
         for team in req.json()["data"]:
@@ -58,7 +66,12 @@ class CTFDlink:
         if req.status_code != 200:
             logger.error(f"Error get_successes {req.url} {req.status_code}")
             return []
-        challenges = [{"name":c['challenge']['name'],"date":c['date']} for c in req.json()["data"]]
+        if not req.json()["success"]:
+            logger.error(
+                f"Error patch pwd user {req.url} {req.json()['errors']}")
+            return []
+        challenges = [{"name": c['challenge']['name'], "date":c['date']}
+                      for c in req.json()["data"]]
         return challenges
 
     def get_challenges(self):
@@ -69,6 +82,11 @@ class CTFDlink:
         if req.status_code != 200:
             logger.error(f"Error get_challenges {req.url} {req.status_code}")
             return []
+        if not req.json()["success"]:
+            logger.error(
+                f"Error get_challenges {req.url} {req.json()['errors']}")
+            return []
+
         challenges = [{"name":c["name"],"id":c["id"]} for c in req.json()["data"]]
         return challenges
 
@@ -81,9 +99,34 @@ class CTFDlink:
         if req.status_code != 200:
             logger.error(f"Error get_challenge {req.url} {req.status_code}")
             return []
+        if not req.json()["success"]:
+            logger.error(
+                f"Error get_challenge {req.url} {req.json()['errors']}")
+            return []
         req = req.json()["data"]
         chal_details = {"name":req["name"],"description":req["description"],"id":req["id"],"value":req["value"]}
         return chal_details
+
+    def reset_pwd(self,user, pwd):
+        """ reset le password de l'utilisateur """
+        req = self.session.get(f"users/{user['id']}",json=True)
+        if req.status_code != 200:
+            logger.error(f"Error get user {req.url} {req.status_code}")
+            return False
+        if not req.json()["success"]:
+            logger.error(f"Error get user {req.url} {req.json()['errors']}")
+            return False
+        data = req.json()["data"]
+        data["password"] = pwd
+        req = self.session.patch(f"users/{user['id']}",json=data)
+        if req.status_code != 200:
+            logger.error(f"Error patch pwd user {req.url} {req.status_code}")
+            return False
+        if not req.json()["success"]:
+            logger.error(
+                f"Error patch pwd user {req.url} {req.json()['errors']}")
+            return False
+        return True
 
 class CTFDnotif(commands.Cog):
     def __init__(self,bot):
@@ -228,6 +271,23 @@ class CTFDnotif(commands.Cog):
             await member.add_roles(role)
         
 
+    @commands.command("resetpwd")
+    @commands.dm_only()
+    async def reset_pwd(self,ctx,pwd):
+        discord_nick,tag = ctx.author.name,ctx.author.discriminator
+        user = [u for u in self.link.get_users() if u["discord_nick"]==f"{discord_nick}#{tag}"]
+        if len(user)==0:
+            logger.info(f"Reset pwd : Utilisateur {discord_nick}#{tag} inconnu sur {CTFD_SITE}")
+            await ctx.send(f"Utilisateur {discord_nick}#{tag} inconnu sur {CTFD_SITE}")
+            return
+        user = user[0]
+        if not self.link.reset_pwd(user,pwd):
+            await ctx.send(f"Mot de passe non changé.")
+            return
+        await ctx.send(f"Mot de passe changé")
+
+
+
 class APISession(Session):
     """@ctfcli """
     def __init__(self, prefix_url=None, *args, **kwargs):
@@ -254,6 +314,7 @@ def _date_after(date,timestamp):
 
 def _format_user(u):
     lst = [t['value'] for t in u['fields'] if t['name']=='Discord ID']
+    
     if len(lst)==0:
         logger.warning(f"Error format_user {u['name']}: no discord id found")
         return None
