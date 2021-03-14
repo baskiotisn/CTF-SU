@@ -185,7 +185,7 @@ class CTFDnotif(commands.Cog):
         async for message in chan.history():
             if team["name"]  in message.content and challenge['name'] in message.content:
                 return
-        await chan.send(f"La team **{team['name']}** (*{','.join(x.split('#')[0] for x in team['membres'])}*) a résolu **{challenge['name']}** le {datetime.fromisoformat(challenge['date']).strftime('%d/%m/%y à %H:%M')}")
+        await chan.send(f"La team **{team['name']}** (*{','.join(x['discord_nick'].split('#')[0] for x in team['membres'])}*) a résolu **{challenge['name']}** le {datetime.fromisoformat(challenge['date']).strftime('%d/%m/%y à %H:%M')}")
 
 
     async def create_chan(self,chal):
@@ -217,7 +217,7 @@ class CTFDnotif(commands.Cog):
         if chan is None:
             logger.info(f"Creating chan {chan_name} for {chal_name}")
             html = urljoin(CTFD_SITE.rstrip("/")+"/",f"challenges#{chal_name.replace(' ','%20')}-{chal['id']}")
-            chan = await salon.create_text_channel(chan_name,topic=html+f"  (*{chal['value']} points *)")
+            chan = await salon.create_text_channel(chan_name,topic=html+f"  *({chal['value']} points)*")
             msg = await chan.send(chal["description"])
             await msg.pin()
 
