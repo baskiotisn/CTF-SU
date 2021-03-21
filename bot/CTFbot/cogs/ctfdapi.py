@@ -230,7 +230,7 @@ class CTFDnotif(commands.Cog):
             }
             html = urljoin(CTFD_SITE.rstrip("/")+"/",
                            f"challenges#{chal_name.replace(' ','%20')}-{chal['id']}")
-            chan_success = await salon.create_text_channel(chan_name+"-success", overwrites=overwrites, topic=html+f"  (*{chal['value']} points *)")
+            chan_success = await salon.create_text_channel(chan_name+"-success", overwrites=overwrites, topic=html+f"  *({chal['value']} points)*")
 
     
 
