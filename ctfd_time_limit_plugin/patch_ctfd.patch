@@ -1,0 +1,304 @@
+diff -Naur -x '*.min.*' -x ctfd_time_limit_plugin CTFd/api/v1/challenges.py ../CTFd/CTFd/api/v1/challenges.py
+--- CTFd/api/v1/challenges.py	2021-03-28 22:12:58.981215934 +0200
++++ ../CTFd/CTFd/api/v1/challenges.py	2021-03-28 23:32:54.368784717 +0200
+@@ -1,4 +1,3 @@
+-from CTFd.plugins.ctfd_time_limit_plugin.models import TimeLimit
+ import datetime
+ from typing import List
+ 
+@@ -121,12 +120,20 @@
+         .group_by(Solves.challenge_id)
+     )
+     # Also gather the user's solve items which can be different from above query
+-    # Even if we are a hidden user, we should see that we have solved the challenge
+-    # But as a hidden user we are not included in the count
+-    solve_ids = (
+-        Solves.query.with_entities(Solves.challenge_id).filter(user_solved_cond).all()
+-    )
+-    solve_ids = {value for value, in solve_ids}
++    # For example, even if we are a hidden user, we should see that we have solved a challenge
++    # however as a hidden user we are not included in the count of the above query
++    if admin_view:
++        # If we're an admin we should show all challenges as solved to break through any requirements
++        challenges = Challenges.query.all()
++        solve_ids = {challenge.id for challenge in challenges}
++    else:
++        # If not an admin we calculate solves as normal
++        solve_ids = (
++            Solves.query.with_entities(Solves.challenge_id)
++            .filter(user_solved_cond)
++            .all()
++        )
++        solve_ids = {value for value, in solve_ids}
+     return solves_q, solve_ids
+ 
+ 
+@@ -174,8 +181,6 @@
+         # Require a team if in teams mode
+         # TODO: Convert this into a re-useable decorator
+         # TODO: The require_team decorator doesnt work because of no admin passthru
+-        from CTFd.plugins.ctfd_time_limit_plugin.models import TimeLimit
+-        from datetime import datetime
+         if get_current_user_attrs():
+             if is_admin():
+                 pass
+@@ -213,10 +218,8 @@
+             solve_count_dfl = None
+ 
+         # Build the query for the challenges which may be listed
+-        chal_q = db.session.query(Challenges,TimeLimit).join(
+-            TimeLimit, Challenges.id == TimeLimit.chalid)
++        chal_q = Challenges.query
+         # Admins can see hidden and locked challenges in the admin view
+-        
+         if admin_view is False:
+             chal_q = chal_q.filter(
+                 and_(Challenges.state != "hidden", Challenges.state != "locked")
+@@ -229,7 +232,7 @@
+         # will be JSONified back to the client
+         response = []
+         tag_schema = TagSchema(view="user", many=True)
+-        for challenge,tl in chal_q:
++        for challenge in chal_q:
+             if challenge.requirements:
+                 requirements = challenge.requirements.get("prerequisites", [])
+                 anonymize = challenge.requirements.get("anonymize")
+@@ -245,8 +248,6 @@
+                                 "name": "???",
+                                 "value": 0,
+                                 "solves": None,
+-                                "timelimit": tl.timelimit.strftime("%d/%m/%y"),
+-                                "ended": tl.ended,
+                                 "solved_by_me": False,
+                                 "category": "???",
+                                 "tags": [],
+@@ -272,8 +273,6 @@
+                     "value": challenge.value,
+                     "solves": solve_counts.get(challenge.id, solve_count_dfl),
+                     "solved_by_me": challenge.id in user_solves,
+-                    "timelimit": tl.timelimit.strftime("%d/%m/%y"),
+-                    "ended":tl.ended,
+                     "category": challenge.category,
+                     "tags": tag_schema.dump(challenge.tags).data,
+                     "template": challenge_type.templates["view"],
+@@ -362,7 +361,7 @@
+                 500,
+                 f"The underlying challenge type ({chal.type}) is not installed. This challenge can not be loaded.",
+             )
+-        timelimit = TimeLimit.query.filter(TimeLimit.chalid == challenge_id).first_or_404().timelimit.strftime("%d/%m/%y")
++
+         if chal.requirements:
+             requirements = chal.requirements.get("prerequisites", [])
+             anonymize = chal.requirements.get("anonymize")
+@@ -397,7 +396,6 @@
+                                 "tags": [],
+                                 "template": "",
+                                 "script": "",
+-                                "timelimit":timelimit,
+                             },
+                         }
+                     abort(403)
+@@ -451,7 +449,7 @@
+         response = chal_class.read(challenge=chal)
+ 
+         solves_q, user_solves = _build_solves_query(
+-            admin_view=is_admin(), extra_filters=(Solves.challenge_id == chal.id,)
++            extra_filters=(Solves.challenge_id == chal.id,)
+         )
+         # If there are no solves for this challenge ID then we have 0 rows
+         maybe_row = solves_q.first()
+@@ -479,7 +477,7 @@
+         response["files"] = files
+         response["tags"] = tags
+         response["hints"] = hints
+-        response["timelimit"]=timelimit
++
+         response["view"] = render_template(
+             chal_class.templates["view"].lstrip("/"),
+             solves=solve_count,
+diff -Naur -x '*.min.*' -x ctfd_time_limit_plugin CTFd/api/v1/scoreboard.py ../CTFd/CTFd/api/v1/scoreboard.py
+--- CTFd/api/v1/scoreboard.py	2021-03-28 14:57:24.348619545 +0200
++++ ../CTFd/CTFd/api/v1/scoreboard.py	2021-03-28 23:32:54.372784690 +0200
+@@ -84,14 +84,13 @@
+     @check_score_visibility
+     @cache.cached(timeout=60, key_prefix=make_cache_key)
+     def get(self, count):
+-        from CTFd.plugins.ctfd_time_limit_plugin.models import TimeLimit
+         response = {}
+ 
+         standings = get_standings(count=count)
+ 
+         team_ids = [team.account_id for team in standings]
+ 
+-        solves = Solves.query.join(TimeLimit,Solves.challenge_id == TimeLimit.chalid).filter(Solves.account_id.in_(team_ids)).filter(Solves.date <= TimeLimit.timelimit)
++        solves = Solves.query.filter(Solves.account_id.in_(team_ids))
+         awards = Awards.query.filter(Awards.account_id.in_(team_ids))
+ 
+         freeze = get_config("freeze")
+diff -Naur -x '*.min.*' -x ctfd_time_limit_plugin CTFd/models/__init__.py ../CTFd/CTFd/models/__init__.py
+--- CTFd/models/__init__.py	2021-03-28 23:15:07.783869566 +0200
++++ ../CTFd/CTFd/models/__init__.py	2021-03-28 23:32:54.380784641 +0200
+@@ -5,6 +5,7 @@
+ from flask_sqlalchemy import SQLAlchemy
+ from sqlalchemy.ext.hybrid import hybrid_property
+ from sqlalchemy.orm import column_property, validates
++
+ from CTFd.cache import cache
+ 
+ db = SQLAlchemy()
+@@ -358,8 +359,8 @@
+ 
+     def get_solves(self, admin=False):
+         from CTFd.utils import get_config
+-        from CTFd.plugins.ctfd_time_limit_plugin.models import TimeLimit
+-        solves = Solves.query.filter_by(user_id=self.id).join(TimeLimit,Solves.challenge_id == TimeLimit.chalid).filter(Solves.date <= TimeLimit.timelimit)
++
++        solves = Solves.query.filter_by(user_id=self.id)
+         freeze = get_config("freeze")
+         if freeze and admin is False:
+             dt = datetime.datetime.utcfromtimestamp(freeze)
+@@ -388,14 +389,12 @@
+ 
+     @cache.memoize()
+     def get_score(self, admin=False):
+-        from CTFd.plugins.ctfd_time_limit_plugin.models import TimeLimit
+-
+         score = db.func.sum(Challenges.value).label("score")
+         user = (
+             db.session.query(Solves.user_id, score)
+             .join(Users, Solves.user_id == Users.id)
+-            .join(Challenges, Solves.challenge_id == Challenges.id).join(TimeLimit, Solves.challenge_id == TimeLimit.chalid)
+-            .filter(Users.id == self.id).filter(Solves.date <= TimeLimit.timelimit)
++            .join(Challenges, Solves.challenge_id == Challenges.id)
++            .filter(Users.id == self.id)
+         )
+ 
+         award_score = db.func.sum(Awards.value).label("award_score")
+@@ -587,10 +586,10 @@
+ 
+     def get_solves(self, admin=False):
+         from CTFd.utils import get_config
+-        from CTFd.plugins.ctfd_time_limit_plugin.models import TimeLimit
++
+         member_ids = [member.id for member in self.members]
+ 
+-        solves = Solves.query.filter(Solves.user_id.in_(member_ids)).join(TimeLimit, Solves.challenge_id == TimeLimit.chalid).filter(Solves.date <= TimeLimit.timelimit).order_by(
++        solves = Solves.query.filter(Solves.user_id.in_(member_ids)).order_by(
+             Solves.date.asc()
+         )
+ 
+diff -Naur -x '*.min.*' -x ctfd_time_limit_plugin CTFd/themes/core/assets/css/challenge-board.scss ../CTFd/CTFd/themes/core/assets/css/challenge-board.scss
+--- CTFd/themes/core/assets/css/challenge-board.scss	2021-03-28 21:28:50.583479873 +0200
++++ ../CTFd/CTFd/themes/core/assets/css/challenge-board.scss	2021-03-28 23:32:54.440784265 +0200
+@@ -28,18 +28,12 @@
+   box-shadow: 3px 3px 3px grey;
+ }
+ 
+-.ended-challenge{
+-  background-color: #555555 !important;
+-  opacity: 0.1;
+-  border: none;
+-}
+ .solved-challenge {
+   background-color: #37d63e !important;
+   opacity: 0.4;
+   border: none;
+ }
+ 
+-
+ .corner-button-check {
+   margin-top: -10px;
+   margin-right: 25px;
+diff -Naur -x '*.min.*' -x ctfd_time_limit_plugin CTFd/themes/core/assets/js/pages/challenges.js ../CTFd/CTFd/themes/core/assets/js/pages/challenges.js
+--- CTFd/themes/core/assets/js/pages/challenges.js	2021-03-28 21:25:17.700909800 +0200
++++ ../CTFd/CTFd/themes/core/assets/js/pages/challenges.js	2021-03-28 23:32:54.440784265 +0200
+@@ -316,7 +316,6 @@
+ 
+       const chalheader = $("<p>{0}</p>".format(chalinfo.name));
+       const chalscore = $("<span>{0}</span>".format(chalinfo.value));
+-      const chaldeadline = $("<p>(=> {0})</p>".format(chalinfo.timelimit));
+       for (let j = 0; j < chalinfo.tags.length; j++) {
+         const tag = "tag-" + chalinfo.tags[j].value.replace(/ /g, "-");
+         chalwrap.addClass(tag);
+@@ -324,11 +323,8 @@
+ 
+       chalbutton.append(chalheader);
+       chalbutton.append(chalscore);
+-      chalbutton.append(chaldeadline);
+       chalwrap.append(chalbutton);
+-      if (chalinfo.ended){
+-        chalbutton.addClass("ended-challenge");
+-      }
++
+       $("#" + catid + "-row")
+         .find(".category-challenges > .challenges-row")
+         .append(chalwrap);
+diff -Naur -x '*.min.*' -x ctfd_time_limit_plugin CTFd/themes/core/templates/challenge.html ../CTFd/CTFd/themes/core/templates/challenge.html
+--- CTFd/themes/core/templates/challenge.html	2021-03-28 22:18:36.930876067 +0200
++++ ../CTFd/CTFd/themes/core/templates/challenge.html	2021-03-28 23:32:54.472784065 +0200
+@@ -27,7 +27,7 @@
+ 						<h3 class="challenge-value text-center">
+ 							{{ challenge.value }}
+ 						</h3>
+-						
++
+ 						<div class="challenge-tags text-center">
+ 							{% block tags %}
+ 								{% for tag in tags %}
+diff -Naur -x '*.min.*' -x ctfd_time_limit_plugin CTFd/utils/scores/__init__.py ../CTFd/CTFd/utils/scores/__init__.py
+--- CTFd/utils/scores/__init__.py	2021-03-28 14:26:44.542409050 +0200
++++ ../CTFd/CTFd/utils/scores/__init__.py	2021-03-28 23:32:54.476784041 +0200
+@@ -17,7 +17,6 @@
+ 
+     Challenges & Awards with a value of zero are filtered out of the calculations to avoid incorrect tie breaks.
+     """
+-    from CTFd.plugins.ctfd_time_limit_plugin.models import TimeLimit
+     if fields is None:
+         fields = []
+     Model = get_model()
+@@ -30,9 +29,7 @@
+             db.func.max(Solves.date).label("date"),
+         )
+         .join(Challenges)
+-        .join(TimeLimit,Solves.challenge_id == TimeLimit.chalid)
+         .filter(Challenges.value != 0)
+-        .filter(Solves.date <= TimeLimit.timelimit)
+         .group_by(Solves.account_id)
+     )
+ 
+@@ -123,7 +120,6 @@
+ 
+ @cache.memoize(timeout=60)
+ def get_team_standings(count=None, admin=False, fields=None):
+-    from CTFd.plugins.ctfd_time_limit_plugin.models import TimeLimit
+     if fields is None:
+         fields = []
+     scores = (
+@@ -134,9 +130,7 @@
+             db.func.max(Solves.date).label("date"),
+         )
+         .join(Challenges)
+-        .join(TimeLimit, Solves.challenge_id == TimeLimit.chalid)
+         .filter(Challenges.value != 0)
+-        .filter(Solves.date <= TimeLimit.timelimit)
+         .group_by(Solves.team_id)
+     )
+ 
+@@ -208,7 +202,6 @@
+ 
+ @cache.memoize(timeout=60)
+ def get_user_standings(count=None, admin=False, fields=None):
+-    from CTFd.plugins.ctfd_time_limit_plugin.models import TimeLimit
+     if fields is None:
+         fields = []
+     scores = (
+@@ -219,9 +212,7 @@
+             db.func.max(Solves.date).label("date"),
+         )
+         .join(Challenges)
+-        .join(TimeLimit, Solves.challenge_id == TimeLimit.chalid)
+         .filter(Challenges.value != 0)
+-        .filter(Solves.date <= TimeLimit.timelimit)
+         .group_by(Solves.user_id)
+     )
+ 

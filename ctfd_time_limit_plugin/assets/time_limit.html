@@ -1,0 +1,59 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+
+<div class="jumbotron">
+    <div class="container">
+        <h1>Challenge Time Limit</h1>
+    </div>
+</div>
+
+<div class="container">
+    <div id="errors" class="row">
+        <div class="col-md-12">
+            <h1 class="text-center" id="error-msg"></h1>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+    <table id="challenges" class="table table-striped">
+        <thead>
+            <tr>
+                <td><b>ID</b></td>
+                <td><b>Name</b></td>
+                <td><b>Time Limit</b></td>
+                <td><b>Update</b></td>
+            </tr>
+        </thead>
+        <tbody>
+            {% for challenge in challenges %}
+            <tr>
+                <td>{{ challenge.chalid }}</td>
+                <td>{{ challenge.name }}</td>
+                <td>{{ challenge.timelimit }}</td>
+                <td>
+                    <form class="update-timed-limit" action="/admin/time_limit/{{ challenge.chalid }}/update"
+                        method="POST">
+                        <input value="{{ Session.nonce }}" name="nonce" hidden>
+                        <input value="{{ challenge.timelimit }}" name="timelimit" hidden>
+                        <input type="date" name="update_timelimit" value="{{ challenge.timelimit }}">
+                        &nbsp;
+                        <span data-toggle="tooltip" data-placement="top" title="Save Time Limit">
+                            <button style="background-color: transparent; border: none">
+                                <i class="btn-fa fas fa-plus" aria-hidden="true"></i>
+                            </button>
+                        </span>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="/plugins/ctfd_time_limit_plugin/assets/time_limit.js"></script>
+{% endblock %}
