@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 from sqlalchemy import event
 from sqlalchemy.orm import object_session
 def create_if_not_exists_time_limit():
-    return
     chal_ids = [x.id for x in Challenges.query.filter(Challenges.id.notin_(TimeLimit.query.with_entities(TimeLimit.chalid)))]
     for id in chal_ids:
         tl = TimeLimit(id,datetime.now()+timedelta(days=30))

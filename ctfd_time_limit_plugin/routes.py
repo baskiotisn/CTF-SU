@@ -4,7 +4,6 @@ from CTFd.utils.decorators import admins_only
 from CTFd.utils.helpers import get_infos,markup
 from .models import TimeLimit
 import dateutil.parser
-from .tools import create_if_not_exists_time_limit
 
 plugin_blueprint = Blueprint(
     "time_limit", __name__, template_folder="assets")
@@ -13,7 +12,6 @@ plugin_blueprint = Blueprint(
 @plugin_blueprint.route("/admin/time_limit", methods=["GET","POST"])
 @admins_only
 def time_limit():
-    create_if_not_exists_time_limit()
     challenges = [{"chalid":c.id, "name":c.name, "timelimit":t.timelimit} for c,t in db.session.query(Challenges,TimeLimit).filter(Challenges.id==TimeLimit.chalid)]
     return render_template("time_limit.html", challenges=challenges)
 
